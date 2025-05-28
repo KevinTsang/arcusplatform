@@ -24,6 +24,7 @@ dependencies {
 	compile project (':common:arcus-common')
 	compile project (':common:arcus-metrics')
 
+	compile libraries.mailgun
 	compile libraries.sendgridJava
 	compile libraries.sendgridHTTP
 	compile libraries.httpClient

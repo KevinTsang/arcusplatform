@@ -36,6 +36,10 @@ import com.iris.notification.upstream.UpstreamNotificationResponder;
 import com.iris.platform.notification.Notification;
 import com.iris.platform.notification.NotificationMethod;
 import com.iris.platform.notification.provider.NotificationProviderUtil;
+// Mailgun
+import com.mailgun.api.v3.MailgunMessagesApi;
+import com.mailgun.api.v3.MailgunClient;
+// SendGrid
 import com.sendgrid.helpers.mail.Mail;
 import com.sendgrid.helpers.mail.objects.Content;
 import com.sendgrid.helpers.mail.objects.Email;
@@ -74,6 +78,7 @@ public class EmailProvider implements NotificationProvider {
 
     @Inject(optional = true) @Named("email.filter.domain") private String defaultEmailFilterDomain;
 
+    private final MailgunMessagesApi mailgunMessagesApiUS;
     private final SendGrid sendGrid;
     private final PersonDAO personDao;
     private final PlaceDAO placeDao;
@@ -84,7 +89,7 @@ public class EmailProvider implements NotificationProvider {
     @Inject
     public EmailProvider(@Named("email.provider.apikey") String sendGridApiKey, PersonDAO personDao, PlaceDAO placeDao, AccountDAO accountDao, NotificationMessageRenderer messageRenderer, UpstreamNotificationResponder responder) {
         this.sendGrid = new SendGrid(sendGridApiKey);
-        
+        this.mailgunMessagesApiUS = MailgunClient.config("SecretKeyHere").createApi();
 
         this.personDao = personDao;
         this.placeDao = placeDao;

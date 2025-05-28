@@ -251,6 +251,7 @@ ext.libraries << [
 
 
 // Notifications
+		mailgun: "com.mailgun:mailgun-java:1.1.6",
 		sendgridJava: "com.sendgrid:sendgrid-java:4.4.1",
 		sendgridJavaOld: 'com.sendgrid:sendgrid-java:2.2.0',
 		sendgridHTTP: "com.sendgrid:java-http-client:4.2.0",

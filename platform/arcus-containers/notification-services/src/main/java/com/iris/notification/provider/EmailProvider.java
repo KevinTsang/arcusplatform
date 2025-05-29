@@ -38,7 +38,9 @@ import com.iris.platform.notification.NotificationMethod;
 import com.iris.platform.notification.provider.NotificationProviderUtil;
 // Mailgun
 import com.mailgun.api.v3.MailgunMessagesApi;
-import com.mailgun.api.v3.MailgunClient;
+import com.mailgun.client.MailgunClient;
+import com.mailgun.model.message.Message;
+import com.mailgun.model.message.Message.MessageBuilder;
 // SendGrid
 import com.sendgrid.helpers.mail.Mail;
 import com.sendgrid.helpers.mail.objects.Content;
@@ -89,7 +91,7 @@ public class EmailProvider implements NotificationProvider {
     @Inject
     public EmailProvider(@Named("email.provider.apikey") String sendGridApiKey, PersonDAO personDao, PlaceDAO placeDao, AccountDAO accountDao, NotificationMessageRenderer messageRenderer, UpstreamNotificationResponder responder) {
         this.sendGrid = new SendGrid(sendGridApiKey);
-        this.mailgunMessagesApiUS = MailgunClient.config("SecretKeyHere").createApi();
+        this.mailgunMessagesApiUS = MailgunClient.config(sendGridApiKey).createApi(MailgunMessagesApi.class);
 
         this.personDao = personDao;
         this.placeDao = placeDao;
@@ -305,6 +307,16 @@ public class EmailProvider implements NotificationProvider {
             }
         }
 
+        // Mailgun send message
+        MessageBuilder messageBuilder = Message.builder()
+            .from(mailParams.getFromEmail().getEmail())
+            .to(mailParams.getToEmail().getEmail())
+            .subject(mailParams.getSubject())
+            .text(mailParams.getPlaintextBody())
+            .html(mailParams.getHtmlBody());
+        mailgunMessagesApiUS.sendMessage(filterDomain, messageBuilder.build());
+
+        // SendGrid send message
       // Send the email; throw DispatchException if we're unable to
       Content content = new Content("text/plain", mailParams.getPlaintextBody());
 

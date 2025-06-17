@@ -33,15 +33,10 @@ import com.iris.notification.dispatch.DispatchException;
 import com.iris.notification.dispatch.DispatchUnsupportedByUserException;
 import com.iris.notification.message.NotificationMessageRenderer;
 import com.iris.notification.upstream.UpstreamNotificationResponder;
+import com.iris.notification.utils.MailParams;
 import com.iris.platform.notification.Notification;
 import com.iris.platform.notification.NotificationMethod;
 import com.iris.platform.notification.provider.NotificationProviderUtil;
-// Mailgun
-import com.mailgun.api.v3.MailgunMessagesApi;
-import com.mailgun.client.MailgunClient;
-import com.mailgun.model.message.Message;
-import com.mailgun.model.message.Message.MessageBuilder;
-// SendGrid
 import com.sendgrid.helpers.mail.Mail;
 import com.sendgrid.helpers.mail.objects.Content;
 import com.sendgrid.helpers.mail.objects.Email;
@@ -56,31 +51,17 @@ import org.slf4j.LoggerFactory;
 
 
 @Singleton
-public class EmailProvider implements NotificationProvider {
+public class SendGridEmailProvider implements NotificationProvider {
 
-   private static Logger logger = LoggerFactory.getLogger(EmailProvider.class);
+   private static Logger logger = LoggerFactory.getLogger(SendGridEmailProvider.class);
 
-    private static final String REQUEST_END_POINT = "mail/send";
-	private final static String SENDER_NAME_SECTION = "sender-name";
-    private final static String SENDER_EMAIL_SECTION = "sender-email";
-    private final static String REPLYTO_EMAIL_SECTION = "replyto-email";
-    private final static String SUBJECT_SECTION = "subject";
-    private final static String PLAINTEXT_BODY_SECTION = "plaintext-body";
-    private final static String HTML_BODY_SECTION = "html-body";
-    private final static EmailValidator EMAIL_VALIDATOR = EmailValidator.getInstance();
-
-
-    @Inject @Named("email.sendername") 	private String defaultSenderName;
-    @Inject @Named("email.senderemail") 	private String defaultSenderEmail;
-    @Inject @Named("email.replyto") 	private String defaultReplyToEmail;
-    @Inject @Named("email.subject") 	private String defaultSubject;
+   private static final String REQUEST_END_POINT = "mail/send";
+   private final static EmailValidator EMAIL_VALIDATOR = EmailValidator.getInstance();
 
     @Inject(optional=true) @Named("email.timeout.ms")
     private int timeout = (int)TimeUnit.MILLISECONDS.convert(5, TimeUnit.SECONDS);
 
-    @Inject(optional = true) @Named("email.filter.domain") private String defaultEmailFilterDomain;
 
-    private final MailgunMessagesApi mailgunMessagesApiUS;
     private final SendGrid sendGrid;
     private final PersonDAO personDao;
     private final PlaceDAO placeDao;
@@ -89,130 +70,14 @@ public class EmailProvider implements NotificationProvider {
     private final UpstreamNotificationResponder responder;
 
     @Inject
-    public EmailProvider(@Named("email.provider.apikey") String sendGridApiKey, PersonDAO personDao, PlaceDAO placeDao, AccountDAO accountDao, NotificationMessageRenderer messageRenderer, UpstreamNotificationResponder responder) {
+    public SendGridEmailProvider(@Named("email.provider.apikey") String sendGridApiKey, PersonDAO personDao, PlaceDAO placeDao, AccountDAO accountDao, NotificationMessageRenderer messageRenderer, UpstreamNotificationResponder responder) {
         this.sendGrid = new SendGrid(sendGridApiKey);
-        this.mailgunMessagesApiUS = MailgunClient.config(sendGridApiKey).createApi(MailgunMessagesApi.class);
 
         this.personDao = personDao;
         this.placeDao = placeDao;
         this.accountDao = accountDao;
         this.messageRenderer = messageRenderer;
         this.responder = responder;
-    }
-
-    public class MailParams {
-       private String recipientName;
-        private String emailFilterDomain = defaultEmailFilterDomain;
-        private String senderName = defaultSenderName;
-        private String senderEmail = defaultSenderEmail;
-        private String replyToEmail = defaultReplyToEmail;
-        private String subject = defaultSubject;
-        private String plaintextBody;
-        private String htmlBody;
-        private Email toEmail;
-        private Email fromEmail;
-
-        public MailParams() {
-        }
-
-        public String getSenderName() {
-            return senderName;
-        }
-
-        public void setSenderName(String senderName) {
-            this.senderName = senderName;
-        }
-
-        public String getReplyToEmail() {
-            return replyToEmail;
-        }
-
-        public void setReplyToEmail(String replyToEmail) {
-            this.replyToEmail = replyToEmail;
-        }
-
-        public String getSenderEmail() {
-            return senderEmail;
-        }
-
-        public void setSenderEmail(String senderEmail) {
-            this.senderEmail = senderEmail;
-        }
-
-        public String getSubject() {
-            return subject;
-        }
-
-        public void setSubject(String subject) {
-            this.subject = subject;
-        }
-
-        public String getPlaintextBody() {
-            return plaintextBody;
-        }
-
-        public void setPlaintextBody(String plaintextBody) {
-            this.plaintextBody = plaintextBody;
-        }
-
-        public String getHtmlBody() {
-            return htmlBody;
-        }
-
-        public void setHtmlBody(String htmlBody) {
-            this.htmlBody = htmlBody;
-        }
-
-       public Email getToEmail() {
-          return toEmail;
-       }
-
-       public void setToEmail(Email toEmail) {
-          this.toEmail = toEmail;
-       }
-
-       public Email getFromEmail() {
-          return fromEmail;
-       }
-
-       public void setFromEmail(Email fromEmail) {
-          this.fromEmail = fromEmail;
-       }
-
-       public String getRecipientName() {
-          return recipientName;
-       }
-
-       public void setRecipientName(String recipientName) { this.recipientName = recipientName; }
-
-        public String getEmailFilterDomain() { return emailFilterDomain; }
-
-        public void setEmailFilterDomain(String emailFilterDomain) { this.emailFilterDomain = emailFilterDomain; }
-    }
-
-    private MailParams fromMap(Map<String, String> messageParts) {
-        MailParams mailParams = new MailParams();
-
-        if (messageParts.containsKey(SENDER_NAME_SECTION)) {
-            mailParams.setSenderName(messageParts.get(SENDER_NAME_SECTION));
-        }
-
-        if (messageParts.containsKey(SENDER_EMAIL_SECTION)) {
-            mailParams.setSenderEmail(messageParts.get(SENDER_EMAIL_SECTION));
-        }
-
-        if (messageParts.containsKey(REPLYTO_EMAIL_SECTION)) {
-            mailParams.setReplyToEmail(messageParts.get(REPLYTO_EMAIL_SECTION));
-        }
-
-        if (messageParts.containsKey(SUBJECT_SECTION)) {
-            mailParams.setSubject(messageParts.get(SUBJECT_SECTION));
-        }
-
-        mailParams.setPlaintextBody(messageParts.containsKey(PLAINTEXT_BODY_SECTION) ? messageParts.get(PLAINTEXT_BODY_SECTION) : messageParts.get(""));
-        mailParams.setHtmlBody(messageParts.containsKey(HTML_BODY_SECTION) ? messageParts.get(HTML_BODY_SECTION) : mailParams.getPlaintextBody());
-
-        return mailParams;
     }
 
     @Override
@@ -286,7 +151,7 @@ public class EmailProvider implements NotificationProvider {
 
       // Render the notification message
       Map<String, String> messageParts = messageRenderer.renderMultipartMessage(notification, NotificationMethod.EMAIL, person, additionalEntityParams);
-      MailParams mailParams = fromMap(messageParts);
+      MailParams mailParams = MailParams.fromMap(messageParts);
 
       mailParams.setRecipientName(getPersonDisplayName(recipient));
       mailParams.setToEmail(new Email(recipientEmail, mailParams.getRecipientName()));
@@ -306,15 +171,6 @@ public class EmailProvider implements NotificationProvider {
                 return;
             }
         }
-
-        // Mailgun send message
-        MessageBuilder messageBuilder = Message.builder()
-            .from(mailParams.getFromEmail().getEmail())
-            .to(mailParams.getToEmail().getEmail())
-            .subject(mailParams.getSubject())
-            .text(mailParams.getPlaintextBody())
-            .html(mailParams.getHtmlBody());
-        mailgunMessagesApiUS.sendMessage(filterDomain, messageBuilder.build());
 
         // SendGrid send message
       // Send the email; throw DispatchException if we're unable to

@@ -31,13 +31,14 @@ import com.iris.notification.dispatch.NotificationDispatcher;
 import com.iris.notification.message.NotificationMessageRenderer;
 import com.iris.notification.message.TemplateMessageRenderer;
 import com.iris.notification.provider.ApnsProvider;
-import com.iris.notification.provider.EmailProvider;
 import com.iris.notification.provider.GCMProvider;
 import com.iris.notification.provider.IVRProvider;
 import com.iris.notification.provider.LogProvider;
+import com.iris.notification.provider.MailgunEmailProvider;
 import com.iris.notification.provider.MapNotificationProviderRegistry;
 import com.iris.notification.provider.NotificationProvider;
 import com.iris.notification.provider.NotificationProviderRegistry;
+import com.iris.notification.provider.SendGridEmailProvider;
 import com.iris.notification.provider.WebhookProvider;
 import com.iris.notification.provider.apns.ApnsSender;
 import com.iris.notification.provider.apns.NoopApnsSender;
@@ -115,7 +116,8 @@ public class NotificationModule extends AbstractIrisModule {
         registryBinder.addBinding("LOG").to(LogProvider.class);
         registryBinder.addBinding("GCM").to(GCMProvider.class);
         registryBinder.addBinding("APNS").to(ApnsProvider.class);
-        registryBinder.addBinding("EMAIL").to(EmailProvider.class);
+        registryBinder.addBinding("EMAIL").to(SendGridEmailProvider.class);
+        registryBinder.addBinding("MAILGUNEMAIL").to(MailgunEmailProvider.class);
         registryBinder.addBinding("IVR").to(IVRProvider.class);
         registryBinder.addBinding("WEBHOOK").to(WebhookProvider.class);
     }

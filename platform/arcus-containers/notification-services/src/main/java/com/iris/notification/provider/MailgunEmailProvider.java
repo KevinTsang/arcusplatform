@@ -16,6 +16,7 @@
 package com.iris.notification.provider;
 
 import java.io.IOException;
+import java.util.Map;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
@@ -23,60 +24,174 @@ import com.google.inject.name.Named;
 import com.iris.core.dao.AccountDAO;
 import com.iris.core.dao.PersonDAO;
 import com.iris.core.dao.PlaceDAO;
+import com.iris.core.notification.Notifications;
+import com.iris.messages.model.BaseEntity;
+import com.iris.messages.model.Person;
+import com.iris.messages.type.EmailRecipient;
 import com.iris.notification.dispatch.DispatchException;
 import com.iris.notification.dispatch.DispatchUnsupportedByUserException;
 import com.iris.notification.message.NotificationMessageRenderer;
 import com.iris.notification.upstream.UpstreamNotificationResponder;
-import com.iris.notification.utils.MailParams;
 import com.iris.platform.notification.Notification;
+import com.iris.platform.notification.NotificationMethod;
+import com.iris.platform.notification.provider.NotificationProviderUtil;
 import com.mailgun.api.v3.MailgunMessagesApi;
 import com.mailgun.client.MailgunClient;
 import com.mailgun.model.message.Message;
 import com.mailgun.model.message.Message.MessageBuilder;
 import com.mailgun.model.message.MessageResponse;
 import com.mailgun.util.EmailUtil;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.validator.routines.EmailValidator;
 
 @Singleton
 public class MailgunEmailProvider implements NotificationProvider {
-
+   private final PersonDAO personDao;
+   private final PlaceDAO placeDao;
+   private final AccountDAO accountDao;
    private final MailgunMessagesApi mailgunMessagesApiUS;
    private final NotificationMessageRenderer messageRenderer;
    private final UpstreamNotificationResponder responder;
 
+   private final static String SENDER_NAME_SECTION = "sender-name";
+   private final static String SENDER_EMAIL_SECTION = "sender-email";
+   private final static String REPLYTO_EMAIL_SECTION = "replyto-email";
+   private final static String SUBJECT_SECTION = "subject";
+   private final static String PLAINTEXT_BODY_SECTION = "plaintext-body";
+   private final static String HTML_BODY_SECTION = "html-body";
+   private final static EmailValidator EMAIL_VALIDATOR = EmailValidator.getInstance();
    
    @Inject
    public MailgunEmailProvider(@Named("email.provider.apikey") String mailgunApiKey, PersonDAO personDao, PlaceDAO placeDao, AccountDAO accountDao, NotificationMessageRenderer messageRenderer, UpstreamNotificationResponder responder) {
       this.mailgunMessagesApiUS = MailgunClient.config(mailgunApiKey).createApi(MailgunMessagesApi.class);
+      this.personDao = personDao;
+      this.placeDao = placeDao;
+      this.accountDao = accountDao;
       this.messageRenderer = messageRenderer;
       this.responder = responder;
    }
 
    @Override
    public void notifyCustomer(Notification notification) throws DispatchException, DispatchUnsupportedByUserException {
-      // Implementation for sending email using Mailgun
-      // This would typically involve creating a Mail object, setting the content, and using the Mailgun client to send it.
-   }
+      notifyCustomerOldEmail(notification);
 
-   @Override
-   public boolean supportedByUser(Notification notification) {
-      // Logic to determine if the notification is supported by the user
-      return true;
+      Message message = buildMessage(notification);
+      if (message == null) return;
+
+      String toEmail = message.getReplyTo();
+      if (!isEmailValid(toEmail)) {
+//         logger.warn("Notification [{}] for placeId [{}] for person [{}] had invalid toEmail [{}].", notification.getMessageKey(), notification.getPlaceId(), notification.getPersonId(), toEmail == null ? "toEmail is null" : toEmail.getEmail());
+         return;
+      }
+
+      sendEmail(message);
+      responder.handleHandOff(notification);
    }
     
-   public void sendEmail(MailParams mailParams) throws DispatchException {
-      String filterDomain = mailParams.getEmailFilterDomain();
-      MessageBuilder messageBuilder = Message.builder()
-         .from(EmailUtil.nameWithEmail(mailParams.getSenderName(), mailParams.getFromEmail().getEmail()))
-         .to(EmailUtil.nameWithEmail(mailParams.getRecipientName(), mailParams.getToEmail().getEmail()))
-         .subject(mailParams.getSubject())
-         .text(mailParams.getPlaintextBody())
-         .html(mailParams.getHtmlBody());
-         
-      MessageResponse messageResponse = mailgunMessagesApiUS.sendMessage(filterDomain, messageBuilder.build());
+   public void sendEmail(Message message) throws DispatchException {
+      // Filter the load testing domain so we don't flood email provider.
+//      String filterDomain = mailParams.getEmailFilterDomain();
+//
+//      if (StringUtils.isNotBlank(filterDomain)) {
+//         String email = mailParams.getToEmail().getEmail();
+//         if (StringUtils.isNotBlank(email) && email.endsWith(filterDomain)) {
+//            logger.debug("Dropping email to address {} matches domain {}", mailParams.getToEmail().getEmail(), filterDomain);
+//            return;
+//         }
+//      }
+      MessageResponse messageResponse = mailgunMessagesApiUS.sendMessage("filterDomain", message);
       if (messageResponse.getId() == null || messageResponse.getId().isEmpty()) {
       // TODO: Implement proper logging
       //   logger.error("Failed to send email using Mailgun, no message ID returned. Response: {}", messageResponse);
          throw new DispatchException("Failed to send notification email. Reason: no message ID returned");
+      }
+   }
+
+   public Boolean isEmailValid(String email) {
+      if (StringUtils.isEmpty(email)) return false;
+
+      return EMAIL_VALIDATOR.isValid(email);
+   }
+
+   private void notifyCustomerOldEmail(Notification notification) throws DispatchUnsupportedByUserException, DispatchException {
+
+      //if the old email param is present this indicates the email has changed.
+      Map<String, String> messageParams = notification.getMessageParams();
+      if (messageParams == null || !messageParams.containsKey(Notifications.EmailChanged.PARAM_OLD_EMAIL)) return;
+
+      String oldEmail = messageParams.get(Notifications.EmailChanged.PARAM_OLD_EMAIL);
+      if (!isEmailValid(oldEmail)) {
+         // logger.warn("Notification [{}] for placeId [{}] for person [{}] has invalid oldEmail [{}].", notification.getMessageKey(), notification.getPlaceId(), notification.getPersonId(), oldEmail);
+         return;
+      }
+
+      Message message = buildMessage(notification);
+      if (message == null) return;
+
+      MessageBuilder messageBuilder = Message.builder();
+      messageBuilder.to(EmailUtil.nameWithEmail("toName", oldEmail));
+//      mailParams.setToEmail(new Email(oldEmail, mailParams.getRecipientName()));
+      sendEmail(message);
+   }
+
+   private Message buildMessage(Notification notification) throws DispatchUnsupportedByUserException {
+      // Collect recipient information
+      Map<String, BaseEntity<?, ?>> additionalEntityParams = NotificationProviderUtil.addAdditionalParamsAndReturnRecipient(placeDao, personDao, accountDao, notification);
+      Person person = NotificationProviderUtil.getPersonFromParams(additionalEntityParams);
+      EmailRecipient recipient = getRecipient(person, notification);
+
+      if (recipient == null) {
+         throw new DispatchUnsupportedByUserException("No person or direct email address in notification");
+      }
+
+      // Recipient should have email address on file
+      String recipientEmail = recipient.getEmail();
+      if (!isEmailValid(recipientEmail)) {
+         // TODO: Implement proper logging
+         // logger.warn("Notification [{}] for placeId [{}] for person [{}] contained invalid recipientEmail [{}].", notification.getMessageKey(), notification.getPlaceId(), notification.getPersonId(), recipientEmail);
+         return null;
+      }
+
+      // Squirrel away the email address for audit logs
+      notification.setDeliveryEndpoint("email:" + recipientEmail);
+
+      // Render the notification message
+      Map<String, String> messageParts = messageRenderer.renderMultipartMessage(notification, NotificationMethod.EMAIL, person, additionalEntityParams);
+
+      MessageBuilder messageBuilder = Message.builder();
+      if (messageParts.containsKey(SENDER_NAME_SECTION) && messageParts.containsKey(SENDER_EMAIL_SECTION)) {
+         messageBuilder.from(EmailUtil.nameWithEmail(messageParts.get(SENDER_NAME_SECTION), messageParts.get(SENDER_EMAIL_SECTION)));
+      } else {
+         messageBuilder.from(messageParts.get(SENDER_EMAIL_SECTION));
+      }
+      if (messageParts.containsKey(REPLYTO_EMAIL_SECTION)) {
+         messageBuilder.to(EmailUtil.nameWithEmail(getPersonDisplayName(recipient), messageParts.get(REPLYTO_EMAIL_SECTION)));
+      }
+      if (messageParts.containsKey(SUBJECT_SECTION)) {
+         messageBuilder.subject(messageParts.get(SUBJECT_SECTION));
+      }
+      messageBuilder.text(messageParts.containsKey(PLAINTEXT_BODY_SECTION) ? messageParts.get(PLAINTEXT_BODY_SECTION) : messageParts.get(""));
+      messageBuilder.html(messageParts.containsKey(HTML_BODY_SECTION) ? messageParts.get(HTML_BODY_SECTION) : messageParts.get(PLAINTEXT_BODY_SECTION));
+
+      return messageBuilder.build();
+   }
+
+   private EmailRecipient getRecipient(Person p, Notification n) {
+      if(p != null) {
+         EmailRecipient recipient = new EmailRecipient();
+         recipient.setEmail(p.getEmail());
+         recipient.setFirstName(p.getFirstName());
+         recipient.setLastName(p.getLastName());
+         return recipient;
+      }
+      return n.getEmailRecipient();
+   }
+
+   private String getPersonDisplayName(EmailRecipient p) {
+      if (p.getFirstName() == null || p.getFirstName().isEmpty() || p.getLastName() == null || p.getLastName().isEmpty() ) {
+         return p.getEmail();
+      } else {
+         return p.getFirstName() + " " + p.getLastName();
       }
    }
 }

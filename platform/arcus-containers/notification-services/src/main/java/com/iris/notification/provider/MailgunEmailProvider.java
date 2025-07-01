@@ -15,7 +15,6 @@
  */
 package com.iris.notification.provider;
 
-import java.io.IOException;
 import java.util.Map;
 
 import com.google.inject.Inject;
@@ -43,9 +42,13 @@ import com.mailgun.model.message.MessageResponse;
 import com.mailgun.util.EmailUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.validator.routines.EmailValidator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Singleton
 public class MailgunEmailProvider implements NotificationProvider {
+   private static Logger logger = LoggerFactory.getLogger(MailgunEmailProvider.class);
+   
    private final PersonDAO personDao;
    private final PlaceDAO placeDao;
    private final AccountDAO accountDao;
@@ -75,12 +78,12 @@ public class MailgunEmailProvider implements NotificationProvider {
    public void notifyCustomer(Notification notification) throws DispatchException, DispatchUnsupportedByUserException {
       notifyCustomerOldEmail(notification);
 
-      Message message = buildMessage(notification);
+      Message message = buildMessage(notification).build();
       if (message == null) return;
 
       String toEmail = message.getReplyTo();
       if (!isEmailValid(toEmail)) {
-//         logger.warn("Notification [{}] for placeId [{}] for person [{}] had invalid toEmail [{}].", notification.getMessageKey(), notification.getPlaceId(), notification.getPersonId(), toEmail == null ? "toEmail is null" : toEmail.getEmail());
+         logger.warn("Notification [{}] for placeId [{}] for person [{}] had invalid toEmail [{}].", notification.getMessageKey(), notification.getPlaceId(), notification.getPersonId(), toEmail == null ? "toEmail is null" : toEmail);
          return;
       }
 
@@ -101,8 +104,7 @@ public class MailgunEmailProvider implements NotificationProvider {
 //      }
       MessageResponse messageResponse = mailgunMessagesApiUS.sendMessage("filterDomain", message);
       if (messageResponse.getId() == null || messageResponse.getId().isEmpty()) {
-      // TODO: Implement proper logging
-      //   logger.error("Failed to send email using Mailgun, no message ID returned. Response: {}", messageResponse);
+         logger.error("Failed to send email using Mailgun, no message ID returned. Response: {}", messageResponse);
          throw new DispatchException("Failed to send notification email. Reason: no message ID returned");
       }
    }
@@ -121,20 +123,23 @@ public class MailgunEmailProvider implements NotificationProvider {
 
       String oldEmail = messageParams.get(Notifications.EmailChanged.PARAM_OLD_EMAIL);
       if (!isEmailValid(oldEmail)) {
-         // logger.warn("Notification [{}] for placeId [{}] for person [{}] has invalid oldEmail [{}].", notification.getMessageKey(), notification.getPlaceId(), notification.getPersonId(), oldEmail);
+         logger.warn("Notification [{}] for placeId [{}] for person [{}] has invalid oldEmail [{}].", notification.getMessageKey(), notification.getPlaceId(), notification.getPersonId(), oldEmail);
          return;
       }
+      
+      Map<String, BaseEntity<?, ?>> additionalEntityParams = NotificationProviderUtil.addAdditionalParamsAndReturnRecipient(placeDao, personDao, accountDao, notification);
+      Person person = NotificationProviderUtil.getPersonFromParams(additionalEntityParams);
+      EmailRecipient recipient = getRecipient(person, notification);
 
-      Message message = buildMessage(notification);
-      if (message == null) return;
-
-      MessageBuilder messageBuilder = Message.builder();
-      messageBuilder.to(EmailUtil.nameWithEmail("toName", oldEmail));
-//      mailParams.setToEmail(new Email(oldEmail, mailParams.getRecipientName()));
+      MessageBuilder messageBuilder = buildMessage(notification);
+      messageBuilder.to(EmailUtil.nameWithEmail(getPersonDisplayName(recipient), oldEmail));
+      Message message = messageBuilder.build();
+      if (message == null)
+         return;
       sendEmail(message);
    }
 
-   private Message buildMessage(Notification notification) throws DispatchUnsupportedByUserException {
+   private MessageBuilder buildMessage(Notification notification) throws DispatchUnsupportedByUserException {
       // Collect recipient information
       Map<String, BaseEntity<?, ?>> additionalEntityParams = NotificationProviderUtil.addAdditionalParamsAndReturnRecipient(placeDao, personDao, accountDao, notification);
       Person person = NotificationProviderUtil.getPersonFromParams(additionalEntityParams);
@@ -147,8 +152,7 @@ public class MailgunEmailProvider implements NotificationProvider {
       // Recipient should have email address on file
       String recipientEmail = recipient.getEmail();
       if (!isEmailValid(recipientEmail)) {
-         // TODO: Implement proper logging
-         // logger.warn("Notification [{}] for placeId [{}] for person [{}] contained invalid recipientEmail [{}].", notification.getMessageKey(), notification.getPlaceId(), notification.getPersonId(), recipientEmail);
+         logger.warn("Notification [{}] for placeId [{}] for person [{}] contained invalid recipientEmail [{}].", notification.getMessageKey(), notification.getPlaceId(), notification.getPersonId(), recipientEmail);
          return null;
       }
 
@@ -173,7 +177,7 @@ public class MailgunEmailProvider implements NotificationProvider {
       messageBuilder.text(messageParts.containsKey(PLAINTEXT_BODY_SECTION) ? messageParts.get(PLAINTEXT_BODY_SECTION) : messageParts.get(""));
       messageBuilder.html(messageParts.containsKey(HTML_BODY_SECTION) ? messageParts.get(HTML_BODY_SECTION) : messageParts.get(PLAINTEXT_BODY_SECTION));
 
-      return messageBuilder.build();
+      return messageBuilder;
    }
 
    private EmailRecipient getRecipient(Person p, Notification n) {

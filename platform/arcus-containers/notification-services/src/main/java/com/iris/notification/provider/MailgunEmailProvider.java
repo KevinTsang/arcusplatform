@@ -65,7 +65,7 @@ public class MailgunEmailProvider implements NotificationProvider {
    private final static EmailValidator EMAIL_VALIDATOR = EmailValidator.getInstance();
    
    @Inject
-   public MailgunEmailProvider(@Named("email.provider.apikey") String mailgunApiKey, PersonDAO personDao, PlaceDAO placeDao, AccountDAO accountDao, NotificationMessageRenderer messageRenderer, UpstreamNotificationResponder responder) {
+   public MailgunEmailProvider(@Named("mailgunemail.provider.apikey") String mailgunApiKey, PersonDAO personDao, PlaceDAO placeDao, AccountDAO accountDao, NotificationMessageRenderer messageRenderer, UpstreamNotificationResponder responder) {
       this.mailgunMessagesApiUS = MailgunClient.config(mailgunApiKey).createApi(MailgunMessagesApi.class);
       this.personDao = personDao;
       this.placeDao = placeDao;

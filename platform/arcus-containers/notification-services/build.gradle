@@ -38,5 +38,7 @@ dependencies {
 
 	testCompile project (':platform:arcus-test')
 	testCompile libraries.mockito
+	testImplementation libraries.powermock_junit
+	testImplementation libraries.powermock_mockito
 }
 

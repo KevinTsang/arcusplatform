@@ -46,7 +46,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @Singleton
-public class MailgunEmailProvider implements NotificationProvider {
+public class MailgunEmailProvider implements EmailProvider {
    private static Logger logger = LoggerFactory.getLogger(MailgunEmailProvider.class);
    
    private final PersonDAO personDao;

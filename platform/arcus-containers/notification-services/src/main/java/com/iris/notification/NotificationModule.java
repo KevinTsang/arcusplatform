@@ -13,9 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/**
- *
- */
 package com.iris.notification;
 
 import org.slf4j.Logger;
@@ -34,6 +31,7 @@ import com.iris.notification.provider.ApnsProvider;
 import com.iris.notification.provider.GCMProvider;
 import com.iris.notification.provider.IVRProvider;
 import com.iris.notification.provider.LogProvider;
+import com.iris.notification.provider.EmailProvider;
 import com.iris.notification.provider.MailgunEmailProvider;
 import com.iris.notification.provider.MapNotificationProviderRegistry;
 import com.iris.notification.provider.NotificationProvider;
@@ -65,6 +63,10 @@ public class NotificationModule extends AbstractIrisModule {
    @Inject(optional=true)
    @Named("notificationservice.sender.gcm")
    private String gcmSender = "default";
+
+   @Inject(optional=true)
+   @Named("notificationservice.provider.email")
+   private String emailProvider = "default";
 
     @Override
     protected void configure() {
@@ -109,6 +111,20 @@ public class NotificationModule extends AbstractIrisModule {
            break;
         }
 
+        switch (emailProvider) {
+         default:
+            logger.warn("unknown email provider implementation {}: using default instead");
+            // fall through
+
+         case "default":
+            bind(EmailProvider.class).to(SendGridEmailProvider.class);
+            break;
+         case "mailgun":
+            logger.info("using mailgun email sender");
+            bind(EmailProvider.class).to(MailgunEmailProvider.class);
+            break;
+        }
+
         bind(UpstreamNotificationResponder.class).to(IrisUpstreamNotificationResponder.class);
         bind(NotificationService.class).asEagerSingleton();
 
@@ -116,8 +132,7 @@ public class NotificationModule extends AbstractIrisModule {
         registryBinder.addBinding("LOG").to(LogProvider.class);
         registryBinder.addBinding("GCM").to(GCMProvider.class);
         registryBinder.addBinding("APNS").to(ApnsProvider.class);
-        registryBinder.addBinding("EMAIL").to(SendGridEmailProvider.class);
-        registryBinder.addBinding("MAILGUNEMAIL").to(MailgunEmailProvider.class);
+        registryBinder.addBinding("EMAIL").to(EmailProvider.class);
         registryBinder.addBinding("IVR").to(IVRProvider.class);
         registryBinder.addBinding("WEBHOOK").to(WebhookProvider.class);
     }

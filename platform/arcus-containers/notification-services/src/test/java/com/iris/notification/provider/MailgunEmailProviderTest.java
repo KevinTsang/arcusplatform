@@ -42,18 +42,27 @@ import com.iris.platform.notification.Notification;
 import com.iris.platform.notification.NotificationMethod;
 import com.iris.platform.notification.provider.NotificationProviderUtil;
 import com.mailgun.api.v3.MailgunMessagesApi;
+import com.mailgun.client.MailgunClient;
 import com.mailgun.model.message.Message;
+import com.mailgun.model.message.MessageResponse;
 
+import org.powermock.modules.junit4.PowerMockRunner;
+import org.powermock.core.classloader.annotations.PrepareForTest;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.powermock.api.mockito.PowerMockito.mockStatic;
+import static org.powermock.api.mockito.PowerMockito.mock;
+import static org.powermock.api.mockito.PowerMockito.when;
 
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
-@RunWith(MockitoJUnitRunner.class)
+@RunWith(PowerMockRunner.class)
+@PrepareForTest({ MailgunClient.class })
 public class MailgunEmailProviderTest {
     
    protected Notification notification = new NotificationBuilder().build();
@@ -94,9 +103,9 @@ public class MailgunEmailProviderTest {
 
    
    @Before
-   public void initializeSendGridMock() throws Exception {
-      new FieldSetter(uut, uut.getClass().getDeclaredField("mailgun")).set(mailgunMessagesApi);
-      new FieldSetter(uut, uut.getClass().getDeclaredField("logger")).set(logger);
+   public void initializeMailgunMock() throws Exception {
+      FieldSetter.setField(uut, uut.getClass().getDeclaredField("mailgunMessagesApiUS"), mailgunMessagesApi);
+      FieldSetter.setField(uut, uut.getClass().getDeclaredField("logger"), logger);
       Map<String, String> renderedParts = new HashMap<String, String>();
       renderedParts.put("", expectedEmailBody);
 
@@ -105,6 +114,9 @@ public class MailgunEmailProviderTest {
       entityMap.put(NotificationProviderUtil.RECIPIENT_KEY, person);
       entityMap.put(NotificationProviderUtil.PLACE_KEY, place);
 
+      mockStatic(MailgunClient.class);
+      when(MailgunClient.config(anyString()).createApi(MailgunMessagesApi.class)).thenReturn(mailgunMessagesApi);
+
       Mockito.when(personDao.findById(Mockito.any())).thenReturn(person);
       Mockito.when(placeDao.findById(placeId)).thenReturn(place);
       Mockito.when(person.getEmail()).thenReturn(expectedEmailFromEmail);
@@ -112,6 +124,7 @@ public class MailgunEmailProviderTest {
       Mockito.when(person.getLastName()).thenReturn(expectedLastName);
       Mockito.when(messageRenderer.renderMessage(notification, NotificationMethod.EMAIL, person, entityMap)).thenReturn(expectedEmailBody);
       Mockito.when(messageRenderer.renderMultipartMessage(notification, NotificationMethod.EMAIL, person, entityMap)).thenReturn(renderedParts);
+      Mockito.when(mailgunMessagesApi.sendMessage(Mockito.anyString(), Mockito.any(Message.class)));
    }
 
    @Test
@@ -179,20 +192,23 @@ public class MailgunEmailProviderTest {
    }
    
    private void validateEmail(Message message, String toName, String toEmail, String expectedEmailBody) throws JsonParseException, JsonMappingException, IOException {
-        Map<String, String> headers = message.getHeaders();
-        boolean foundHtmlContent = false;
-        boolean foundTextContent = false;
+      String html = message.getHtml();
+      String text = message.getText();
+      boolean foundHtmlContent = false;
+      boolean foundTextContent = false;
         
-        if (headers.get("Content-Type").equals("text/html")) {
-            assertEquals(expectedEmailBody, message.getHtml());
-            foundHtmlContent = true;
-        } else if (headers.get("Content-Type").equals("text/plain")) {
-            assertEquals(expectedEmailBody, message.getText());
-            foundTextContent = true;
-        }
-        assertEquals(true, foundHtmlContent);
-        assertEquals(true, foundTextContent);
-        
-        assertEquals(toEmail, message.getReplyTo());
+      //   if (headers.get("Content-Type").equals("text/html")) {
+      if (html != null && !html.isEmpty()) {
+         assertEquals(expectedEmailBody, message.getHtml());
+         foundHtmlContent = true;
+      //   } else if (headers.get("Content-Type").equals("text/plain")) {
+      } else if (text != null && !text.isEmpty()) {
+         assertEquals(expectedEmailBody, message.getText());
+         foundTextContent = true;
+      }
+      assertEquals(true, foundHtmlContent);
+      assertEquals(true, foundTextContent);
+      
+      assertEquals(toEmail, message.getReplyTo());
    }
 }

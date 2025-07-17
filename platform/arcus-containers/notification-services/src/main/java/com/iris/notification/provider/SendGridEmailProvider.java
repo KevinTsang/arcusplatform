@@ -50,7 +50,7 @@ import org.slf4j.LoggerFactory;
 
 
 @Singleton
-public class SendGridEmailProvider implements NotificationProvider {
+public class SendGridEmailProvider implements EmailProvider {
 
     private static Logger logger = LoggerFactory.getLogger(SendGridEmailProvider.class);
 
